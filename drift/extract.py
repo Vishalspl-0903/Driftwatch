@@ -72,11 +72,42 @@ _BOILERPLATE_RE = re.compile(
     r"add to cart|buy now|shipping|returns? polic|cookie)\b"
 )
 
+# Cookie-consent banners and parked/for-sale domain pages (Sedo, GoDaddy-style)
+# are not catalog content -- a render that is ONLY this chrome (fabindia.com/t1
+# in the 17-pair ground truth: "never rendered past the cookie-consent banner")
+# still clears the plain boilerplate filter above and the raw line-count gate,
+# because "Accept All" / "Skip to Main Content" etc. don't match any of those
+# patterns. Stripped here, before the usability gate is computed, same as the
+# other boilerplate categories.
+_INTERSTITIAL_RE = re.compile(
+    r"(?i)\b(we value your privacy|accept all|reject all|accept cookies|"
+    r"manage (cookie )?preferences|cookie preferences|customi[sz]e cookies|"
+    r"this (website|site) uses cookies|skip to (main content|footer|navigation|content))\b"
+)
+_PARKED_DOMAIN_RE = re.compile(
+    r"(?i)\b(buy this domain|this domain (is|may be) for sale|domain may be for sale|"
+    r"domain parking|backorder this domain|make (us )?an offer|sedo'?s? domain parking|"
+    r"parked (free|domain)|inquire about this domain)\b"
+)
+
 # ---------------------------------------------------------------------------
 # Thresholds for "did extraction find enough to trust the score"
 # ---------------------------------------------------------------------------
 MIN_IMAGES_FOR_TRUST = 3
 MIN_TEXT_LINES_FOR_TRUST = 6
+
+# mine_wayback.py's own render-quality probe (meta.json .this.quality.broken_image_ratio)
+# is a stronger usability signal than anything extract.py can derive from candidate
+# counts alone: a page can yield 3+ fetchable image candidates and 6+ short text
+# lines while the underlying render was still mostly broken (sleepyowl.co/t1,
+# firstcry.com/t0 in the 17-pair ground truth both did exactly this). Above this
+# cutoff, both the image and text signals for that side are refused regardless of
+# how many candidates were extracted -- mine_wayback.py's own render-time gate
+# (--max-broken-image-ratio, default 0.5) already treats a render as failed and
+# retries a different capture beyond that point, so 0.3 is intentionally tighter,
+# not identical: the drift detector needs the render trustworthy enough to
+# embed, not merely intact enough to save to disk.
+MAX_BROKEN_IMAGE_RATIO_FOR_TRUST = 0.3
 
 
 @dataclass
@@ -95,13 +126,26 @@ class ExtractResult:
     dom_txt_found: bool = False
     total_img_tags: int = 0
     total_text_lines: int = 0
+    render_broken_image_ratio: float | None = None  # from mine_wayback.py's meta.json
+    notes: list[str] = field(default_factory=list)
+
+    @property
+    def render_too_broken(self) -> bool:
+        return (
+            self.render_broken_image_ratio is not None
+            and self.render_broken_image_ratio > MAX_BROKEN_IMAGE_RATIO_FOR_TRUST
+        )
 
     @property
     def images_usable(self) -> bool:
+        if self.render_too_broken:
+            return False
         return len(self.image_candidates) >= MIN_IMAGES_FOR_TRUST
 
     @property
     def text_usable(self) -> bool:
+        if self.render_too_broken:
+            return False
         return len(self.catalog_text) >= MIN_TEXT_LINES_FOR_TRUST
 
 
@@ -178,6 +222,10 @@ def extract_catalog_text(dom_txt: str) -> tuple[list[str], int]:
             continue
         if _BOILERPLATE_RE.search(ln):
             continue
+        if _INTERSTITIAL_RE.search(ln):
+            continue
+        if _PARKED_DOMAIN_RE.search(ln):
+            continue
         key = ln.lower()
         if key in seen:
             continue
@@ -201,6 +249,7 @@ def extract_side(domain: str, side: str, side_dir: Path) -> ExtractResult:
         try:
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
             base_url = meta.get("this", {}).get("final_url", "") or meta.get("this", {}).get("replay_url", "")
+            result.render_broken_image_ratio = meta.get("this", {}).get("quality", {}).get("broken_image_ratio")
         except (json.JSONDecodeError, OSError):
             pass
 
@@ -213,6 +262,12 @@ def extract_side(domain: str, side: str, side_dir: Path) -> ExtractResult:
         result.dom_txt_found = True
         text = txt_path.read_text(encoding="utf-8", errors="replace")
         result.catalog_text, result.total_text_lines = extract_catalog_text(text)
+
+    if result.render_too_broken:
+        result.notes.append(
+            f"render_broken_image_ratio={result.render_broken_image_ratio} exceeds "
+            f"{MAX_BROKEN_IMAGE_RATIO_FOR_TRUST} -- images and text both marked unusable regardless of candidate counts"
+        )
 
     return result
 

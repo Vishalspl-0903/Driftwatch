@@ -9,17 +9,22 @@ Two independent signals, reported separately and never fused into one number:
 Higher = more drift. Each score is None when its side didn't clear the
 usability bar -- a None is a refusal to guess, not a zero.
 
-Usability is decided post-fetch, not from extract.py's raw DOM candidate
-count: extract.py finds URLs, but a meaningful share of those routinely fail
-to actually resolve to bytes (mine_wayback.py's own quality probe already
-recorded this per render as broken_image_ratio). A score built on 2 out of 3
-requested images that happened to load is not trustworthy; the gate here is
-on what was actually embeddable, which is the true bottleneck resource.
+Usability has two layers, both refusals rather than best-effort guesses:
+  * extract.py's own gate rejects a side outright when mine_wayback.py's
+    render-quality probe (broken_image_ratio) came back too high, regardless
+    of how many candidates were extracted -- a broken render can still yield
+    a handful of technically-fetchable images or technically-long-enough
+    text (see extract.py's docstring for the real examples that motivated
+    this).
+  * On top of that, image usability here additionally requires enough
+    candidates to actually resolve to bytes post-fetch: extract.py finds
+    URLs, but a meaningful share routinely fail to fetch even when the
+    render wasn't broken enough to trip the first gate. A score built on 2
+    out of 3 requested images that happened to load is not trustworthy.
 """
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -30,7 +35,6 @@ from drift.extract import ExtractResult, extract_pair
 from drift.fetch import fetch_images
 
 MIN_FETCHED_IMAGES_FOR_TRUST = 3
-MIN_TEXT_LINES_FOR_TRUST = 6
 
 
 @dataclass
@@ -67,21 +71,20 @@ class PairScore:
         return self.image_pair_usable or self.text_pair_usable
 
 
-def _render_broken_ratio(pairs_root: Path, domain: str, side: str) -> float | None:
-    meta_path = pairs_root / domain / side / "meta.json"
-    if not meta_path.exists():
-        return None
-    try:
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        return meta.get("this", {}).get("quality", {}).get("broken_image_ratio")
-    except (json.JSONDecodeError, OSError):
-        return None
-
-
 def _side_images(extract_result: ExtractResult, cache_dir: Path) -> tuple[np.ndarray, SideDiagnostics]:
     diag = SideDiagnostics(side=extract_result.side, dom_image_candidates=len(extract_result.image_candidates))
     diag.text_lines = len(extract_result.catalog_text)
-    diag.text_usable = len(extract_result.catalog_text) >= MIN_TEXT_LINES_FOR_TRUST
+    # text_usable already folds in the broken_image_ratio gate (drift/extract.py) --
+    # not recomputed here, so the two modules can't silently disagree on it.
+    diag.text_usable = extract_result.text_usable
+    diag.render_broken_image_ratio = extract_result.render_broken_image_ratio
+    diag.notes.extend(extract_result.notes)
+
+    if extract_result.render_too_broken:
+        # Already logged via extract_result.notes above; refused outright per
+        # the broken_image_ratio gate, regardless of candidate count -- no
+        # point spending a fetch on a side we're not going to score.
+        return np.zeros((0, 512), dtype=np.float32), diag
 
     urls = [c.url for c in extract_result.image_candidates]
     if not urls:
@@ -111,8 +114,6 @@ def score_pair(
 
     t0_img_vecs, t0_diag = _side_images(t0_extract, cache_dir)
     t1_img_vecs, t1_diag = _side_images(t1_extract, cache_dir)
-    t0_diag.render_broken_image_ratio = _render_broken_ratio(pairs_root, domain, "t0")
-    t1_diag.render_broken_image_ratio = _render_broken_ratio(pairs_root, domain, "t1")
 
     image_score: float | None = None
     if t0_diag.images_usable and t1_diag.images_usable:
