@@ -1,0 +1,15 @@
+# Extra dependencies for drift/ (category drift detector) and evals/run_eval.py.
+# Install after requirements.txt. torch is CPU-only here; swap the index URL
+# for a CUDA build if you want GPU inference (see drift/embed.py -- it already
+# picks up CUDA automatically via torch.cuda.is_available() if present).
+#
+#   pip install -r requirements.txt
+#   pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
+#   pip install -r requirements-drift.txt
+
+transformers==5.15.1
+sentence-transformers==6.0.0
+beautifulsoup4==4.15.0
+lxml==6.1.2
+pillow==12.3.0
+numpy==2.5.2
