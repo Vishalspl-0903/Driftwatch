@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 """evals/run_eval.py -- validate the category drift detector against the
-17 hand-labeled ground-truth pairs in evals/eyeball_notes.csv.
+hand-labeled ground-truth pairs in evals/eyeball_notes.csv.
 
-This is a sanity check, not a benchmark: n=13 in the category-vs-none
-comparison (5 category-drift pairs + 8 none pairs; the 3 structural pairs and
-1 content pair are outside that binary comparison by definition, not because
-they're low quality). Precision/recall/threshold numbers below are not a
-validated metric and should not be read, cited, or reused as one anywhere
-outside this sanity check.
+This is a sanity check, not a benchmark. The comparison is category-drift
+pairs (positive class: the detector should score these high) against
+structural-and-none pairs (negative class: same business, no category
+change -- the detector should score these low). structural is included in
+the negative class deliberately, not as an oversight: "redesign, same
+business" is exactly the kind of change that should NOT trigger a
+category-drift signal, so it's as valid a negative example as "none". The
+content-axis pair stays outside the comparison -- it's neither class by
+definition. Precision/recall/threshold numbers below are not a validated
+metric and should not be read, cited, or reused as one anywhere outside
+this sanity check.
 
 Usage:
   python -m evals.run_eval
@@ -27,7 +32,7 @@ GROUND_TRUTH_CSV = Path("evals/eyeball_notes.csv")
 PAIRS_ROOT = Path("data/pairs")
 
 CATEGORY_AXIS = "category"
-NONE_AXIS = "none"
+NEGATIVE_AXES = ("none", "structural")
 
 
 def load_ground_truth(path: Path) -> list[dict]:
@@ -93,13 +98,16 @@ def main() -> int:
         usable = "+".join(b for b in usable_bits if b) or "none"
         print(f"{row['domain']:<24} {row['fits_axis']:<11} {img:>11} {txt:>10}  {usable}")
 
-    # --- category (5) vs none (8) comparison --------------------------------
+    # --- category (positive) vs structural+none (negative) comparison -------
+    comparison = [(r, s) for r, s in results if r["fits_axis"] == CATEGORY_AXIS or r["fits_axis"] in NEGATIVE_AXES]
+    n_cat = sum(1 for r, _ in comparison if r["fits_axis"] == CATEGORY_AXIS)
+    n_neg = len(comparison) - n_cat
     print("\n" + "=" * 78)
-    print("CATEGORY (5) vs NONE (8) SEPARATION CHECK  --  n=13, sanity check only, NOT a validated metric")
+    print(
+        f"CATEGORY ({n_cat}, positive) vs STRUCTURAL+NONE ({n_neg}, negative) SEPARATION CHECK  --  "
+        f"n={len(comparison)}, sanity check only, NOT a validated metric"
+    )
     print("=" * 78)
-
-    comparison = [(r, s) for r, s in results if r["fits_axis"] in (CATEGORY_AXIS, NONE_AXIS)]
-    assert len(comparison) == 13, f"expected 13 category+none pairs, found {len(comparison)}"
 
     for signal_name, score_attr, usable_attr in (
         ("image_drift_score", "image_drift_score", "image_pair_usable"),
@@ -118,13 +126,13 @@ def main() -> int:
                 excluded.append(row["domain"])
 
         cat_vals = sorted(v for _, v, is_cat in usable_scores if is_cat)
-        none_vals = sorted(v for _, v, is_cat in usable_scores if not is_cat)
-        print(f"  usable pairs: {len(usable_scores)}/13  (excluded, insufficient extraction: {excluded or 'none'})")
-        print(f"  category scores ({len(cat_vals)}): {[round(v, 4) for v in cat_vals]}")
-        print(f"  none scores     ({len(none_vals)}): {[round(v, 4) for v in none_vals]}")
+        neg_vals = sorted(v for _, v, is_cat in usable_scores if not is_cat)
+        print(f"  usable pairs: {len(usable_scores)}/{len(comparison)}  (excluded, insufficient extraction: {excluded or 'none'})")
+        print(f"  category scores  ({len(cat_vals)}): {[round(v, 4) for v in cat_vals]}")
+        print(f"  negative scores  ({len(neg_vals)}): {[round(v, 4) for v in neg_vals]}")
 
-        if len(cat_vals) >= 1 and len(none_vals) >= 1:
-            separates = min(cat_vals) > max(none_vals)
+        if len(cat_vals) >= 1 and len(neg_vals) >= 1:
+            separates = min(cat_vals) > max(neg_vals)
             print(f"  cleanly separable at any threshold: {separates}")
             thr, stats = best_threshold(usable_scores)
             if thr is not None:
