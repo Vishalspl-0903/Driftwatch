@@ -1,14 +1,15 @@
 """adjudicate/nodes/vlm_evidence.py -- node 3: the only node in this graph
 that calls a model.
 
-Model: gemini-3.1-pro-preview via `google-genai` (the current SDK -- NOT
-the deprecated `google-generativeai` package). The task specified Gemini
-2.5 Pro; generate_content calls to gemini-2.5-pro return 404 "no longer
-available to new users" for the API key this project has (confirmed live,
-not assumed -- the model is still listed by models.list(), just not
-callable). Switched to gemini-3.1-pro-preview, the direct replacement named
-in Google's own error message, with explicit user confirmation. See
-logging_utils.py for the re-looked-up pricing this substitution required.
+Model: qwen/qwen3.6-27b via the `groq` SDK (OpenAI-compatible chat
+completions endpoint). Swapped from Gemini (gemini-3.1-pro-preview, itself
+already a substitution for the originally-specified Gemini 2.5 Pro -- see
+git history) to Groq on request. qwen/qwen3.6-27b is Groq's ONLY
+vision-capable model as of 2026-08 (confirmed via console.groq.com/docs/vision
+and cross-checked against this account's live model list, not assumed) --
+there was no second candidate to choose between. Groq's own docs describe it
+as a preview model, not production-grade, which matches what testing here
+found: see the schema-reliability notes below.
 
 Multimodal call: t0 image + t1 image + drift score + DOM diff hint in,
 structured JSON out. The taxonomy handed to the model is deliberately just
@@ -16,27 +17,40 @@ structured JSON out. The taxonomy handed to the model is deliberately just
 FAILURES.md), and this node does not offer them as options at all, rather
 than trust the model to self-restrict.
 
-response_schema below is Gemini's own structured-output enforcement
-(response_mime_type="application/json" + a Pydantic schema), which is why
-node 4 (structure_output) can validate rather than free-text-parse. Design
-principle carried through: this node gathers and describes evidence, it
-does not decide the action -- policy_adjudicate (node 5) does that, off
-axis+confidence alone.
+Structured-output reliability, confirmed by live testing against this exact
+model before settling on this config:
+  - response_format={"type": "json_schema", ...} with strict=True, or with
+    a pydantic schema built via ConfigDict(extra="forbid") (which emits
+    "additionalProperties": false), reliably makes qwen/qwen3.6-27b return
+    an EMPTY completion (400 json_validate_failed, failed_generation="") --
+    not a schema mismatch, a generation failure. This is a real limitation
+    of this specific model on Groq's structured-output implementation, not
+    a bug in this code; additionalProperties is never set here because of
+    it.
+  - Without that flag, but with Literal-typed (enum-constrained) fields,
+    generation succeeds and the enum values are respected -- but a live
+    test still once produced a response missing the "confidence" field
+    entirely, despite it being in "required". So the JSON shape is not
+    fully guaranteed even in the working configuration. That is exactly why
+    node 4 (structure_output) validates and fails loudly rather than assume
+    the schema was honored -- for this model that safety net is doing real
+    work, not just defensive boilerplate.
 """
 
 from __future__ import annotations
 
+import base64
 import os
 import time
 
-from google import genai
-from google.genai import types
+from groq import Groq
 from pydantic import BaseModel, Field
+from typing import Literal
 
 from adjudicate.logging_utils import estimate_cost_usd
 from adjudicate.state import AdjudicateState
 
-MODEL_NAME = "gemini-3.1-pro-preview"
+MODEL_NAME = "qwen/qwen3.6-27b"
 
 CANDIDATE_AXES = ("category", "structural")
 CONFIDENCE_LEVELS = ("high", "medium", "low")
@@ -61,24 +75,28 @@ Task:
 3. State your confidence in that axis choice: "high", "medium", or "low".
 4. Point to the specific visual evidence that supports your answer -- which part of the image, which product category or section, what specifically changed.
 
-Respond with the structured JSON fields directly."""
+Respond with a JSON object containing exactly these four fields, all required, none omitted: axis, description, confidence, evidence_pointer."""
 
 
 class VLMEvidence(BaseModel):
-    axis: str = Field(description="Either 'category' or 'structural', nothing else.")
+    axis: Literal["category", "structural"] = Field(description="Either 'category' or 'structural', nothing else.")
     description: str = Field(description="Plain-language description of what changed between t0 and t1.")
-    confidence: str = Field(description="One of 'high', 'medium', 'low'.")
+    confidence: Literal["high", "medium", "low"] = Field(description="One of 'high', 'medium', 'low'.")
     evidence_pointer: str = Field(description="The specific visual evidence supporting the axis choice.")
 
 
-def _client() -> genai.Client:
-    api_key = os.environ.get("GOOGLE_API_KEY")
+def _client() -> Groq:
+    api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
         raise RuntimeError(
-            "GOOGLE_API_KEY is not set. Load it from .env (python-dotenv) or export it "
+            "GROQ_API_KEY is not set. Load it from .env (python-dotenv) or export it "
             "before running the adjudicate graph."
         )
-    return genai.Client(api_key=api_key)
+    return Groq(api_key=api_key)
+
+
+def _data_uri(image_bytes: bytes) -> str:
+    return "data:image/png;base64," + base64.b64encode(image_bytes).decode("ascii")
 
 
 def vlm_evidence(state: AdjudicateState) -> dict:
@@ -88,21 +106,32 @@ def vlm_evidence(state: AdjudicateState) -> dict:
         dom_diff=state.get("dom_diff_summary", "(no diff available)"),
     )
 
-    contents = [
-        prompt,
-        types.Part.from_bytes(data=state["t0_image_bytes"], mime_type="image/png"),
-        types.Part.from_bytes(data=state["t1_image_bytes"], mime_type="image/png"),
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": _data_uri(state["t0_image_bytes"])}},
+                {"type": "image_url", "image_url": {"url": _data_uri(state["t1_image_bytes"])}},
+            ],
+        }
     ]
 
-    config = types.GenerateContentConfig(
-        response_mime_type="application/json",
-        response_schema=VLMEvidence,
-    )
+    # No "strict": True and no additionalProperties -- see module docstring;
+    # both reliably break generation on this model.
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {"name": "VLMEvidence", "schema": VLMEvidence.model_json_schema()},
+    }
 
     client = _client()
     started = time.monotonic()
     try:
-        response = client.models.generate_content(model=MODEL_NAME, contents=contents, config=config)
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=messages,
+            response_format=response_format,
+        )
     except Exception as exc:  # noqa: BLE001 -- fail loudly downstream, not silently here
         return {
             "vlm_error": f"{type(exc).__name__}: {exc}",
@@ -115,15 +144,13 @@ def vlm_evidence(state: AdjudicateState) -> dict:
         }
     latency = round(time.monotonic() - started, 3)
 
-    usage = response.usage_metadata
-    input_tokens = usage.prompt_token_count or 0
-    # Gemini 2.5's thinking tokens are billed at the output rate but reported
-    # separately from candidates_token_count -- both count toward cost.
-    output_tokens = (usage.candidates_token_count or 0) + (usage.thoughts_token_count or 0)
+    usage = response.usage
+    input_tokens = usage.prompt_tokens if usage else 0
+    output_tokens = usage.completion_tokens if usage else 0
     cost = estimate_cost_usd(input_tokens, output_tokens)
 
     return {
-        "vlm_raw_text": response.text or "",
+        "vlm_raw_text": response.choices[0].message.content or "",
         "vlm_latency_s": latency,
         "vlm_input_tokens": input_tokens,
         "vlm_output_tokens": output_tokens,

@@ -1,21 +1,20 @@
 """adjudicate/logging_utils.py -- run logging and the cost/escalation-rate
 summary printed after a test batch.
 
-Pricing constants below are gemini-3.1-pro-preview's published per-token
-rate as of 2026-08 (https://ai.google.dev/gemini-api/docs/pricing,
-standard/non-batch tier, prompts <= 200k tokens -- every call this package
-makes is two images plus a short prompt, nowhere near the 200k-token tier
-where the rate doubles). Looked up, not guessed, per the task instruction.
+Pricing constants below are qwen/qwen3.6-27b's published per-token rate on
+Groq as of 2026-08 (console.groq.com/docs/models, cross-checked against
+independent pricing aggregators). Looked up, not guessed, per the task
+instruction.
 
-Model note: the task specified Gemini 2.5 Pro, but generate_content calls
-to gemini-2.5-pro return 404 "no longer available to new users" for this
-API key (it's still listed by models.list(), just not callable) --
-confirmed live against the actual key before switching. Using
-gemini-3.1-pro-preview instead, per Google's own error message and user
-confirmation. Its pricing is materially different from 2.5 Pro's
-($2.00/$12.00 per 1M vs $1.25/$10.00), which is why this isn't just a
-find-and-replace of the model string -- the cost table below reflects the
-model actually used.
+Model history: the task originally specified Gemini 2.5 Pro; that model
+returned 404 "no longer available to new users" for the project's API key,
+so gemini-3.1-pro-preview was substituted (with its own re-looked-up
+pricing, $2.00/$12.00 per 1M). vlm_evidence.py has since been swapped again,
+this time to Groq's qwen/qwen3.6-27b on request -- its rate ($0.60/$3.00 per
+1M) is materially different again, hence a fresh lookup rather than reusing
+either prior number. Groq has no >200k-token pricing tier to worry about
+here (qwen3.6-27b's context window is 131K tokens total, and these calls
+are two images plus a short prompt regardless).
 """
 
 from __future__ import annotations
@@ -26,9 +25,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-# https://ai.google.dev/gemini-api/docs/pricing -- gemini-3.1-pro-preview, standard tier, <=200k token prompts
-GEMINI_INPUT_USD_PER_1M_TOKENS = 2.00
-GEMINI_OUTPUT_USD_PER_1M_TOKENS = 12.00
+# console.groq.com/docs/models -- qwen/qwen3.6-27b
+VLM_INPUT_USD_PER_1M_TOKENS = 0.60
+VLM_OUTPUT_USD_PER_1M_TOKENS = 3.00
 
 LOG_FIELDS = [
     "timestamp", "domain", "drift_score", "path",
@@ -42,8 +41,8 @@ DEFAULT_LOG_PATH = Path("adjudicate/logs/run_log.csv")
 
 def estimate_cost_usd(input_tokens: int, output_tokens: int) -> float:
     return (
-        input_tokens / 1_000_000 * GEMINI_INPUT_USD_PER_1M_TOKENS
-        + output_tokens / 1_000_000 * GEMINI_OUTPUT_USD_PER_1M_TOKENS
+        input_tokens / 1_000_000 * VLM_INPUT_USD_PER_1M_TOKENS
+        + output_tokens / 1_000_000 * VLM_OUTPUT_USD_PER_1M_TOKENS
     )
 
 

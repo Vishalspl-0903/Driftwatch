@@ -1,14 +1,15 @@
 # Extra dependencies for adjudicate/ (the escalation graph). Install after
-# requirements.txt. Uses google-genai (the current SDK) -- NOT the
-# deprecated google-generativeai package.
+# requirements.txt.
 #
 #   pip install -r requirements.txt
 #   pip install -r requirements-adjudicate.txt
 #
-# Also needs a GOOGLE_API_KEY -- see .env.example.
+# Also needs a GROQ_API_KEY -- see .env.example. (Originally built against
+# Gemini via google-genai; vlm_evidence.py now calls Groq's qwen/qwen3.6-27b
+# instead -- see that file's docstring for why.)
 
 langgraph==1.2.11
-google-genai==2.19.0
+groq==1.6.0
 python-dotenv==1.2.3
 PyYAML==6.0.3
 pydantic==2.13.4
