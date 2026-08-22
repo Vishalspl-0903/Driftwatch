@@ -10,17 +10,26 @@
 # is the whole point of keeping this config-driven.
 #
 # Rationale (see FAILURES.md for the drift/ validation this policy is built
-# on):
+# on, and for the boat-lifestyle.com finding that changed the structural
+# rule below):
 #   - category + high confidence: the VLM is confident this is a real
 #     category shift -- flag it for review now, don't wait on a human to
 #     re-derive what the model already saw clearly.
 #   - category + medium/low confidence: plausible category drift but the
 #     VLM itself isn't sure -- send to a human rather than have either the
 #     model or a hardcoded default decide alone.
-#   - structural, any confidence: validated as the low-risk axis (redesign,
-#     same business) -- approve regardless of how confident the VLM is that
-#     it's structural, since even a mildly-confident "structural" is not a
-#     risk signal by definition of the locked taxonomy.
+#   - structural, any confidence: NOT auto-approved. Originally was --
+#     "structural" was validated in FAILURES.md as the low-risk axis
+#     (redesign, same business) using human-labeled ground truth. But the
+#     end-to-end test on boat-lifestyle.com (a real, hand-labeled
+#     category-drift pair: audio-only -> broad consumer electronics/
+#     wearables/corporate gifting) had the VLM call it "structural" at
+#     high confidence, disagreeing with the human label -- see FAILURES.md.
+#     An axis label the VLM itself can get wrong on a real case is not
+#     something this policy auto-approves on; route to a human instead.
+#     approve is left unused by any rule below rather than deleted, so the
+#     policy is explicit that this action exists and was deliberately
+#     stopped being reachable, not forgotten.
 
 rules:
   - when: {axis: category, confidence: high}
@@ -33,6 +42,6 @@ rules:
     action: escalate_further
 
   - when: {axis: structural}
-    action: approve
+    action: flag_for_review
 
 default_action: escalate_further

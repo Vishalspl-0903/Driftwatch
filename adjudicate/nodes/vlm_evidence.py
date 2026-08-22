@@ -55,7 +55,15 @@ MODEL_NAME = "qwen/qwen3.6-27b"
 CANDIDATE_AXES = ("category", "structural")
 CONFIDENCE_LEVELS = ("high", "medium", "low")
 
-PROMPT_TEMPLATE = """You are reviewing two archived homepage screenshots of the same merchant, taken at different times, to judge whether the merchant's product category changed or the site was merely redesigned.
+# Revised 2026-08 after the boat-lifestyle.com finding (see FAILURES.md):
+# the original prompt let the model reason about brand identity ("does this
+# still look like the same company") and visual redesign, and it picked
+# "structural" at high confidence on a real category-drift pair despite its
+# own evidence_pointer noting the product mix had changed. This version
+# frames the task explicitly as category/MCC risk-exposure assessment from
+# the product catalog, and tells the model directly not to let brand/visual
+# continuity override what the product mix shows.
+PROMPT_TEMPLATE = """You are a risk analyst assessing category/MCC (merchant category code) risk exposure for a payments/compliance use case. Your job is to judge whether the merchant's PRODUCT MIX changed enough to represent a different risk category -- not whether the brand still "feels" the same, and not how much the visual design changed.
 
 Merchant: {domain}
 Deterministic image-drift score (CLIP catalog-image centroid distance, t0 vs t1): {score:.4f}
@@ -67,10 +75,11 @@ A summary of line-level text differences between the two page renders (context o
 The first image is the t0 (earlier) screenshot. The second image is the t1 (later) screenshot.
 
 Task:
-1. Describe in plain language what visibly changed between t0 and t1.
+1. Describe in plain language what visibly changed between t0 and t1, focusing specifically on the PRODUCT CATALOG / PRODUCT MIX -- what kinds of products or services are being sold -- not the page layout or visual style.
 2. Decide which of exactly two axes this change fits:
-   - "category": the merchant's core product/service category changed (e.g. a different kind of product being sold, a different line of business).
-   - "structural": the site was redesigned (layout, visual style, navigation) but the underlying business and product category are the same.
+   - "category": the merchant's PRODUCT MIX or line of business meaningfully changed -- new product categories that weren't sold before, a different underlying business, a materially different MCC risk profile. This applies even if the brand name, logo, and overall visual identity stayed the same: a redesign that ALSO expanded into new product categories is still "category", not "structural".
+   - "structural": the site's layout, visual style, or navigation changed, but the actual set of products/services sold is the same -- no new product categories, same underlying MCC risk profile.
+   Do not let visual redesign, rebranding, or "does this still look like the same company" reasoning override what the product catalog itself shows. If the product mix expanded into new categories, that is "category" drift regardless of how consistent the branding looks.
    Do not consider any other axis. If the change is ambiguous, pick whichever of these two is the closer fit and reflect your uncertainty in the confidence field.
 3. State your confidence in that axis choice: "high", "medium", or "low".
 4. Point to the specific visual evidence that supports your answer -- which part of the image, which product category or section, what specifically changed.

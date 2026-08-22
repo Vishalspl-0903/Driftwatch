@@ -98,3 +98,75 @@ n=10 is accepted as the validation sample given time constraints. This is
 the stated confidence level for the image signal, not a placeholder pending
 more mining — no further threshold tuning or targeted mining against this
 specific validation is planned.
+
+## adjudicate/ VLM escalation — boat-lifestyle.com disagreed with ground truth (2026-08-22)
+
+The first live end-to-end run of the escalation graph on boat-lifestyle.com
+(the one documented boundary case, image_drift_score=0.146) reached the VLM
+and got a real, complete answer — but the wrong one. The VLM
+(`qwen/qwen3.6-27b` on Groq — see the model-substitution history in
+`adjudicate/nodes/vlm_evidence.py`'s docstring) returned `axis=structural,
+confidence=high`, and `policy_adjudicate` correctly applied the
+then-current policy (structural → `approve`) and approved the pair.
+
+That's the wrong outcome. boat-lifestyle.com is hand-labeled ground truth in
+`evals/eyeball_notes.csv` as `category` drift, medium confidence: the
+merchant expanded from a pure audio brand (headphones, speakers only, 2015)
+to broad consumer electronics — smartwatches, power banks, earbuds,
+corporate gifting (2026). The VLM's own `evidence_pointer` for the wrong
+verdict *noticed* the product change ("specific models changed... e.g.
+'ROCKERZ In Ear 200' in t0 vs 'boAt Airdopes 181 Pro' in t1") but then
+reasoned past it to a brand-identity conclusion: "the core business remains
+selling audio and lifestyle electronics." It correctly extracted the
+evidence and then applied the wrong lens to it — the model was reasoning
+about whether this still felt like the same company and the same visual
+category (redesign) of site, not about whether the sellable product mix had
+moved into a materially different risk category. That distinction is
+exactly what a category/MCC-risk read requires and a "does this look like
+the same brand" read does not.
+
+**Policy change made in response:** `adjudicate/policy.yaml` — `axis:
+structural` no longer routes to `approve` at any confidence; it now routes
+to `flag_for_review`, the same as it would if a human were seeing this
+verdict cold. An axis label the VLM demonstrably got wrong on a real,
+hand-labeled case is not something this policy auto-approves on. `approve`
+is left defined but unreachable by any rule (documented inline in the YAML)
+rather than deleted, so the policy is explicit that auto-approval was a
+deliberate choice that got turned off, not an oversight.
+
+**One prompt revision attempted, per instruction not to iterate further
+than this:** `vlm_evidence.py`'s prompt was rewritten to frame the task
+explicitly as category/MCC risk-exposure assessment from the product
+catalog — "assess category/MCC risk exposure from product mix change, not
+brand identity or visual redesign" — and to tell the model directly not to
+let brand/visual continuity override what the product mix shows.
+
+Three live calls were made with the revised prompt (the designated
+re-run, plus two attempts to refresh the logged test artifacts):
+- **1 succeeded, and matched ground truth**: `axis=category,
+  confidence=high`. The new evidence_pointer is materially more specific
+  than the original run's: it names the actual new product verticals —
+  "the t1 screenshot features a 'Shop by Categories' section explicitly
+  listing 'Smart Watches', 'Dashcams', 'Projectors', 'Soundbars', and
+  'Trimmers', which were absent in the t0 screenshot" — rather than
+  concluding on brand continuity. Cost $0.00664, 3706 in / 1472 out
+  tokens, 6.16s latency.
+- **2 failed outright** with `400 json_validate_failed` before producing
+  any usable JSON — one returned an empty completion, the other hit
+  `max completion tokens reached before generating a valid document`
+  (this model's thinking/reasoning tokens consumed the completion budget
+  before it reached the final answer). Both are the same structured-output
+  reliability limitation already documented in `vlm_evidence.py`'s
+  docstring, not a new failure mode, and both are consistent with Groq's
+  own description of `qwen/qwen3.6-27b` as a preview model.
+
+**Reported plainly, per instruction, not spun:** the revised prompt got the
+right answer on its one clean pass, on the one case that mattered most to
+get right. It is a single data point, not a validated fix, and the same
+run also surfaced this model's structured-output reliability as low enough
+that 2 of 3 attempts didn't produce a usable answer at all. The policy
+change (structural → flag_for_review) is what's actually load-bearing here,
+not the prompt revision — it means a wrong or unreliable VLM verdict on
+this axis still reaches a human rather than auto-approving, regardless of
+which of these three outcomes any given real call lands on. No further
+prompt iteration was done, per instruction.
