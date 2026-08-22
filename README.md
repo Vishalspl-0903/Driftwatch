@@ -37,6 +37,10 @@ pip install -r requirements.txt
 playwright install chromium
 ```
 
+For the drift detector (`drift/`, `evals/run_eval.py`), also install
+`requirements-drift.txt` — see that file for the CLIP/BGE model dependencies
+and the CPU-vs-GPU torch install note.
+
 ## Usage
 
 Mine the full target list:
@@ -90,6 +94,28 @@ evals/
 | Drift-prone | 10 | Nutraceutical/supplement D2C, lending-adjacent fintech, crypto — categories where real pivots happen |
 | Stable control | 10 | Large established merchants, expected to show minimal drift |
 | Buffer | 10 | Extra slots to absorb replay failures (JS-lazy-load pages, broken asset replay, etc.) |
+
+## Drift detector (`drift/`)
+
+Given a mined pair, `drift/` scores how much a storefront's catalog changed
+between t0 and t1: `extract.py` pulls candidate product images and
+catalog/nav text out of the render (with a usability gate that refuses a
+side outright when its render was too broken to trust — see FAILURES.md),
+`fetch.py` resolves image candidates to actual bytes, `embed.py` turns
+images and text into vectors, and `score.py` reports the cosine distance
+between t0 and t1 centroids. `evals/run_eval.py` validates both candidate
+signals against hand-labeled ground truth in `evals/eyeball_notes.csv`.
+
+**Validated result:** the image signal (CLIP catalog-image centroid) is the
+detector — on 23 hand-labeled real pairs it separates 2 of 3 usable
+category-drift positives cleanly from all 7 usable negatives (precision
+1.00, recall 0.67 at best threshold, n=10). The text signal (BGE
+catalog/nav-text centroid) was rejected: it measures how much a site's
+text/nav footprint grew across a redesign, not whether its category
+changed, and was dropped after clean structural-redesign negatives
+outscored every category-drift positive. Full validation write-up,
+including the two gate fixes that got the negative-example sample clean
+enough to trust, is in `FAILURES.md`.
 
 ## Current dataset status
 
