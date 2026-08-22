@@ -10,3 +10,9 @@ evals/eyeball_review*.html
 # python
 __pycache__/
 *.pyc
+
+# secrets — never commit real keys, .env.example documents the shape
+.env
+
+# adjudicate/ run logs
+adjudicate/logs/
