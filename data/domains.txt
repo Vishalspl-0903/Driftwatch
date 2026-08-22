@@ -1,0 +1,82 @@
+# Driftwatch mining target list — Indian merchant storefronts.
+# One domain per line. Bare domain; scheme/www/path are stripped by the miner.
+#
+# Four buckets, ~50 domains total:
+#
+#   1. SMALL/MID D2C (20)      — Instagram-native / Shopify-lite storefronts,
+#                                 chosen for likely decent Wayback coverage.
+#   2. DRIFT-PRONE (10)        — nutraceutical/supplement D2C, lending-adjacent
+#                                 fintech, crypto/trading services. Categories
+#                                 where real business-model or trust-posture
+#                                 pivots are plausible between t0 and t1.
+#   3. STABLE CONTROL (10)     — large, established merchants where drift
+#                                 should be minimal. Baseline for the "none"
+#                                 class.
+#   4. BUFFER (10)             — extra slots, since JS-lazy-load / broken-replay
+#                                 failures (see chumbak.com in status.json) eat
+#                                 mining slots without producing a pair.
+#
+# Confidence flags (inline comments): entries marked MODERATE are brands I'm
+# fairly but not fully certain of the exact registered domain for — verify
+# before treating a hard failure on one of these as a real absence-of-archive
+# signal rather than a wrong-domain typo.
+
+# --- 1. small/mid D2C (20) ---------------------------------------------------
+bewakoof.com
+theindusvalley.in
+bombayshavingcompany.com
+sleepyowl.co
+wakefit.co
+plum.in
+sugarcosmetics.com
+mcaffeine.com
+beardo.com
+vahdamteas.com          # MODERATE — VAHDAM Teas; confirm this vs. vahdam.in
+fablestreet.com
+bluetokai.com
+thesouledstore.com
+yogabar.in
+licious.in
+giva.co                 # MODERATE — GIVA jewellery
+caratlane.com
+mamaearth.in
+boat-lifestyle.com      # MODERATE — boAt's storefront domain
+zivame.com
+
+# --- 2. drift-prone: nutra / lending-adjacent / crypto (10) -----------------
+healthkart.com
+muscleblaze.com
+oziva.in
+kapiva.in
+wellbeingnutrition.com
+kreditbee.in
+cashe.co
+moneytap.com             # rebranded to "Freo" ~2022 — deliberately kept: a
+                          # real rebrand/pivot is exactly the drift this
+                          # bucket exists to catch, not a reason to drop it
+coindcx.com
+wazirx.com                # had a major 2024 security incident — expect drift
+
+# --- 3. stable control group (10) -------------------------------------------
+tatacliq.com
+titan.co.in
+fabindia.com
+bata.in
+croma.com
+reliancedigital.in
+bigbasket.com
+amul.com
+nykaa.com
+lenskart.com
+
+# --- 4. buffer (10) ----------------------------------------------------------
+chumbak.com              # documented full failure — kept for reference/retry
+firstcry.com             # already validated, one usable pair on disk
+purplle.com
+pantaloons.com
+biba.in
+faballey.com
+libas.in                 # MODERATE — Libas ethnic wear
+dailyobjects.com
+sirona.in
+nicobar.com

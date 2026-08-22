@@ -1,0 +1,11 @@
+data/pairs/
+data/cdx_cache/
+data/mine_wayback_log.csv
+data/*.log
+
+# generated review page — regenerate via scripts/build_eyeball_review.py
+evals/eyeball_review.html
+
+# python
+__pycache__/
+*.pyc
