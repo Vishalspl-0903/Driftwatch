@@ -4,8 +4,8 @@ data/mine_wayback_log.csv
 data/*.log
 data/drift_image_cache/
 
-# generated review page — regenerate via scripts/build_eyeball_review.py
-evals/eyeball_review.html
+# generated review page(s) — regenerate via scripts/build_eyeball_review.py
+evals/eyeball_review*.html
 
 # python
 __pycache__/

@@ -235,10 +235,12 @@ function copyAllRows() {
 """
 
 
-def build(pairs_root: Path, out_path: Path) -> int:
+def build(pairs_root: Path, out_path: Path, only: set[str] | None = None) -> int:
     pairs = []
     for d in sorted(pairs_root.iterdir()):
         if not d.is_dir():
+            continue
+        if only is not None and d.name not in only:
             continue
         p = load_pair(d)
         if p:
@@ -281,12 +283,14 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--pairs", type=Path, default=Path("data/pairs"), help="root of mined pairs")
     ap.add_argument("--out", type=Path, default=Path("evals/eyeball_review.html"), help="output HTML file")
+    ap.add_argument("--only", action="append", default=None, help="restrict to this domain (repeatable)")
     args = ap.parse_args()
 
     if not args.pairs.exists():
         print(f"pairs root not found: {args.pairs}")
         return 2
-    n = build(args.pairs, args.out)
+    only = set(args.only) if args.only else None
+    n = build(args.pairs, args.out, only=only)
     print(f"wrote {args.out} with {n} pair(s)")
     if n == 0:
         print("no completed (status=ok) pairs found under", args.pairs)
