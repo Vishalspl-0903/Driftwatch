@@ -80,3 +80,40 @@ libas.in                 # MODERATE — Libas ethnic wear
 dailyobjects.com
 sirona.in
 nicobar.com
+
+# --- 5. clean-render bias set (25) -------------------------------------------
+# Added after the first 50-domain run showed the real bottleneck is usable
+# NEGATIVE examples for drift/, not more taxonomy diversity: 17/50 pairs mined,
+# and of those, post-broken_image_ratio-gate, zero "none"-labeled pairs had a
+# clean enough render to score on images at all. This batch is chosen purely
+# to maximize odds of an intact, low-JS render on both t0 and t1 -- large,
+# older, established brands whose sites tend to stay closer to server-rendered
+# HTML than a modern D2C storefront, in categories not yet represented as
+# stable controls: FMCG, publishing/media, bank/NBFC marketing pages (not
+# netbanking), and classifieds. Not selected for drift potential -- these are
+# expected to be "none" class, which is exactly what's missing.
+britannia.co.in
+parleproducts.com
+dabur.com
+marico.com
+godrejcp.com
+nestle.in
+hul.co.in
+timesofindia.indiatimes.com
+thehindu.com
+hindustantimes.com
+indianexpress.com
+ndtv.com
+outlookindia.com
+sbi.co.in
+hdfcbank.com
+icicibank.com
+axisbank.com
+bankofbaroda.in
+pnbindia.in
+justdial.com
+sulekha.com
+olx.in
+quikr.com
+naukri.com
+99acres.com
