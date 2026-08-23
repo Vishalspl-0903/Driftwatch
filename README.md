@@ -117,6 +117,55 @@ outscored every category-drift positive. Full validation write-up,
 including the two gate fixes that got the negative-example sample clean
 enough to trust, is in `FAILURES.md`.
 
+## Escalation agent (`adjudicate/`)
+
+A LangGraph graph that decides what to do with a mined pair's drift score.
+`escalation_check` routes on two configurable thresholds: below `LOW`
+→ `no_action`, at/above `HIGH` → `auto_flag` (the precision=1.00 zone from
+validation), in between → escalated to a VLM. A pair with no usable image
+score at all (too few catalog images extracted) lands on a fourth outcome,
+`insufficient_data`, rather than being silently folded into `no_action`.
+Escalated pairs go through `fetch_context` (t0/t1 screenshots + a DOM text
+diff), `vlm_evidence` (the only node that calls a model — currently
+`qwen/qwen3.6-27b` on Groq; see that file's docstring for the model
+substitution history), `structure_output` (schema validation, fails loudly,
+never guesses a default), and `policy_adjudicate` (pure YAML rule lookup in
+`adjudicate/policy.yaml` — the model never decides the action, only
+describes evidence).
+
+```
+pip install -r requirements-adjudicate.txt
+cp .env.example .env   # fill in GROQ_API_KEY
+python -m adjudicate.run_test
+```
+
+**Real finding, not just plumbing:** the one documented boundary case
+(boat-lifestyle.com) went through VLM escalation twice with two different
+verdicts — the first disagreed with hand-labeled ground truth and would
+have been auto-approved under the policy at the time. The policy was
+changed in response (`structural` no longer auto-approves). Full story in
+`FAILURES.md`.
+
+## Console (`console/`)
+
+A minimal React + Vite + Tailwind demo console over `adjudicate/`'s output:
+a sortable/filterable queue view, and a detail view with side-by-side
+screenshots and the VLM's evidence packet. Static reads only — no backend —
+so the data has to be assembled first:
+
+```
+python scripts/build_console_data.py   # joins adjudicate/logs/run_log.csv against
+                                        # data/pairs/ and copies screenshots into
+                                        # console/public/
+cd console
+npm install
+npm run dev      # or: npm run build && npm run preview
+```
+
+boat-lifestyle.com's two escalation attempts are both shown in its detail
+view side by side — the disagreement is the point, not something to hide
+behind the latest answer.
+
 ## Current dataset status
 
 Latest full run against all 50 domains: **17 usable pairs**, 28 domains where

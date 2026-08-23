@@ -16,3 +16,14 @@ __pycache__/
 
 # adjudicate/ run logs
 adjudicate/logs/
+
+# console/ generated data (regenerate via scripts/build_console_data.py) --
+# same rationale as evals/eyeball_review.html: derived from already-gitignored
+# sources (data/pairs/, adjudicate/logs/), and the screenshot copies would
+# otherwise bloat the repo the same way data/pairs/ would.
+console/public/data/
+console/public/screenshots/
+
+# node
+node_modules/
+console/dist/
