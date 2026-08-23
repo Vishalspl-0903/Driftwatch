@@ -141,8 +141,8 @@ catalog — "assess category/MCC risk exposure from product mix change, not
 brand identity or visual redesign" — and to tell the model directly not to
 let brand/visual continuity override what the product mix shows.
 
-Three live calls were made with the revised prompt (the designated
-re-run, plus two attempts to refresh the logged test artifacts):
+Three live calls were made with the revised prompt at the time (the
+designated re-run, plus two attempts to refresh the logged test artifacts):
 - **1 succeeded, and matched ground truth**: `axis=category,
   confidence=high`. The new evidence_pointer is materially more specific
   than the original run's: it names the actual new product verticals —
@@ -160,13 +160,31 @@ re-run, plus two attempts to refresh the logged test artifacts):
   docstring, not a new failure mode, and both are consistent with Groq's
   own description of `qwen/qwen3.6-27b` as a preview model.
 
+**Update, building the console (`console/`) surfaced 2 more data points**:
+regenerating `adjudicate/logs/run_log.csv` for the console's demo dataset
+required re-running the pipeline on boat-lifestyle.com twice more (same
+revised prompt, no code changes). Both failed the same way as above (empty
+completion, `400 json_validate_failed`). Neither is a new failure mode --
+recorded here so the reliability count below is complete rather than
+stopping at the first three attempts because that's where the writeup
+happened to pause.
+
+**Running total across every live call made with the current model +
+schema config, both prompt versions combined: 2 successes / 6 attempts
+(33%)** -- 1 with the original (brand/visual-framing) prompt, 1 with the
+revised (category/risk-framing) prompt, 4 failures (3 empty completion, 1
+token-budget exhaustion), all with the revised prompt since that's what
+every post-revision run used. This is the number the README's metrics
+table cites; it will keep moving as the pipeline runs more real pairs, and
+should be re-derived from actual attempts rather than assumed stable.
+
 **Reported plainly, per instruction, not spun:** the revised prompt got the
 right answer on its one clean pass, on the one case that mattered most to
-get right. It is a single data point, not a validated fix, and the same
-run also surfaced this model's structured-output reliability as low enough
-that 2 of 3 attempts didn't produce a usable answer at all. The policy
+get right. It is a single data point, not a validated fix, and the full
+run history shows this model's structured-output reliability is low enough
+that most attempts don't produce a usable answer at all. The policy
 change (structural → flag_for_review) is what's actually load-bearing here,
 not the prompt revision — it means a wrong or unreliable VLM verdict on
 this axis still reaches a human rather than auto-approving, regardless of
-which of these three outcomes any given real call lands on. No further
-prompt iteration was done, per instruction.
+which of these outcomes any given real call lands on. No further prompt
+iteration was done, per instruction.

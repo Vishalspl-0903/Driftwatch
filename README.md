@@ -9,6 +9,8 @@ The dataset unit is a **pair**: two renders of the same homepage, separated by
 enough time that a real business pivot could plausibly have happened, each
 captured as a full-page screenshot plus rendered DOM.
 
+![Driftwatch architecture: MINE → SCORE → ROUTE → ESCALATE (ambiguous middle only) → ADJUDICATE](architecture_diagram.svg)
+
 ## Pipeline
 
 ```
@@ -145,6 +147,23 @@ verdicts — the first disagreed with hand-labeled ground truth and would
 have been auto-approved under the policy at the time. The policy was
 changed in response (`structural` no longer auto-approves). Full story in
 `FAILURES.md`.
+
+## Metrics — measured on a small real sample, not a production-scale eval
+
+Every number below is from an actual run of this pipeline (`adjudicate/logs/run_log.csv`,
+`FAILURES.md`) — n=3 merchant pairs end-to-end, n=10 for the underlying detector
+validation. Read this as "here's what really happened running the thing,"
+not as a benchmark result; the sample is too small for the percentages
+below to be precise, and they're reported at that resolution deliberately.
+
+| Metric | Value | Basis |
+|---|---|---|
+| Merchant pairs run through the full pipeline | 3 | kreditbee.in, healthkart.com, boat-lifestyle.com |
+| Escalation rate | 1/3 reached the VLM (33%) | 2/3 resolved deterministically — 1 `auto_flag`, 1 `insufficient_data`, 0 `no_action` in this sample |
+| Per-escalated-call cost (Groq `qwen/qwen3.6-27b`, $0.60/1M in, $3.00/1M out) | $0.00626 and $0.00664 | 2 individual real calls (3534in/1380out and 3706in/1472out tokens) — not averaged, too few points for an average to mean anything |
+| Per-escalated-call latency | 5.30s and 6.16s | Same 2 calls, reported individually for the same reason |
+| Image-signal detector validation (CLIP catalog centroid) | precision 1.00, recall 0.67 | n=10 (3 category-drift positive, 7 negative), drawn from 23 hand-labeled pairs — accepted sample given time constraints, see `FAILURES.md` |
+| VLM structured-output reliability | 2/6 successful parses (33%) | 4 failures: 3 empty completions, 1 completion-token budget exhausted before valid JSON — both prompt versions combined, see `FAILURES.md` |
 
 ## Console (`console/`)
 
