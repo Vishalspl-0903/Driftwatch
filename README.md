@@ -160,10 +160,12 @@ below to be precise, and they're reported at that resolution deliberately.
 |---|---|---|
 | Merchant pairs run through the full pipeline | 3 | kreditbee.in, healthkart.com, boat-lifestyle.com |
 | Escalation rate | 1/3 reached the VLM (33%) | 2/3 resolved deterministically — 1 `auto_flag`, 1 `insufficient_data`, 0 `no_action` in this sample |
-| Per-escalated-call cost (Groq `qwen/qwen3.6-27b`, $0.60/1M in, $3.00/1M out) | $0.00626 and $0.00664 | 2 individual real calls (3534in/1380out and 3706in/1472out tokens) — not averaged, too few points for an average to mean anything |
-| Per-escalated-call latency | 5.30s and 6.16s | Same 2 calls, reported individually for the same reason |
+| Per-single-attempt cost (Groq `qwen/qwen3.6-27b`, $0.60/1M in, $3.00/1M out) | $0.00626, $0.00664, $0.00792 | 3 individual real successful calls — not averaged, too few points for an average to mean anything |
+| Per-single-attempt latency | 5.30s, 6.16s, 46.81s | Same 3 calls — latency is genuinely variable call to call, not a stable figure to plan around |
 | Image-signal detector validation (CLIP catalog centroid) | precision 1.00, recall 0.67 | n=10 (3 category-drift positive, 7 negative), drawn from 23 hand-labeled pairs — accepted sample given time constraints, see `FAILURES.md` |
-| VLM structured-output reliability | 2/6 successful parses (33%) | 4 failures: 3 empty completions, 1 completion-token budget exhausted before valid JSON — both prompt versions combined, see `FAILURES.md` |
+| VLM reliability, without retry | 2/6 successful (33%) | historical baseline, original single-attempt code, see `FAILURES.md` |
+| VLM reliability, with 1 retry | 3/5 pipeline runs successful (60%) | current code; underlying per-call rate held steady at 33% (3/9 raw calls) — the retry doesn't make one call more reliable, it gives the pipeline a second independent draw |
+| Parse-failure safety | verified, not assumed | a parse failure now has a defined, logged, terminal outcome (`needs_manual_review`) — it never disappears from the queue and never defaults to approve, regardless of how the graph is called. See `FAILURES.md` for the real gap this closed. |
 
 ## Console (`console/`)
 

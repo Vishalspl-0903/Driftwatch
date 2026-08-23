@@ -10,20 +10,11 @@ inspectable rules layer -- not the model -- decides the action.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
-import yaml
-
 from adjudicate.logging_utils import DEFAULT_LOG_PATH, append_run_log
+from adjudicate.policy_loader import load_policy
 from adjudicate.state import AdjudicateState
-
-POLICY_PATH = Path("adjudicate/policy.yaml")
-
-
-def _load_policy(path: Path = POLICY_PATH) -> dict:
-    with path.open(encoding="utf-8") as fh:
-        return yaml.safe_load(fh)
 
 
 def _matches(when: dict[str, Any], evidence: dict[str, Any]) -> bool:
@@ -31,7 +22,7 @@ def _matches(when: dict[str, Any], evidence: dict[str, Any]) -> bool:
 
 
 def policy_adjudicate(state: AdjudicateState) -> dict:
-    policy = _load_policy()
+    policy = load_policy()
     evidence = state.get("evidence") or {}
 
     action = None

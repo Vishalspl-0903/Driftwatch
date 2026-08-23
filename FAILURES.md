@@ -188,3 +188,72 @@ not the prompt revision — it means a wrong or unreliable VLM verdict on
 this axis still reaches a human rather than auto-approving, regardless of
 which of these outcomes any given real call lands on. No further prompt
 iteration was done, per instruction.
+
+## adjudicate/ -- a parse failure had no logged outcome (2026-08-23)
+
+### structure_output raised into a dead end; only the test runner's own try/except gave failed pairs any logged row at all
+
+Traced, not assumed: `structure_output.py -> policy_adjudicate` in
+`graph.py` was a plain, unconditional `add_edge`. LangGraph aborts the
+whole run when a node raises, so when `structure_output.py` raised
+`SchemaValidationError` on a parse failure (which it did on every one of
+the 4 real failures behind the 2/6 reliability number above),
+`policy_adjudicate` never ran and the pair got no final action at all.
+
+The only reason those 4 failures show up in `adjudicate/logs/run_log.csv`
+today is that `adjudicate/run_test.py` happened to wrap `app.invoke()` in
+its own `try/except` and manually logged the exception -- a test-runner
+convenience, never something the graph itself guaranteed. Confirmed
+against the actual row on disk before changing anything:
+`boat-lifestyle.com,0.146,graph_error,...` has a **blank `final_action`
+field** -- `path` said something failed, but nothing said what to do
+about it. Any other real caller of `get_app().invoke(...)` (the graph's
+actual public interface, not the test script) would get an uncaught
+exception and the pair would leave zero trace in `run_log.csv` -- only a
+raw text dump in `schema_failures.log`, which isn't a queue entry.
+
+**Fix:** `structure_output.py` no longer raises. On any failure -- the VLM
+call itself failing, or a response that doesn't validate against the
+evidence schema -- it now returns a normal state update
+(`path="parse_failed"`, `action` = `policy.yaml`'s new
+`parse_failure_action`, currently `needs_manual_review`) and logs it
+itself, the same self-logging pattern `escalation_check.py` already uses
+for its own terminal paths. `graph.py` gained a conditional edge after
+`structure_output`: `parse_failed` routes straight to `END`; anything else
+proceeds to `policy_adjudicate` as before. The fallback action name lives
+in `policy.yaml`, not hardcoded in Python, for the same reason every other
+action this project hands out is config-driven, not a model or code
+decision. **A parse failure now has a defined, logged, safe outcome -- it
+never disappears and never defaults to approve**, regardless of how the
+graph is called.
+
+### One retry added to vlm_evidence; re-measured, both numbers reported
+
+`vlm_evidence.py` now retries exactly once (`MAX_ATTEMPTS = 2`, not a
+loop) when an attempt doesn't produce a response that validates -- covers
+both failure modes actually observed: the API call itself throwing, and
+the rarer case (seen once in pre-ship testing) of a 200 response whose
+content doesn't parse. This is a retry decision, made in `vlm_evidence.py`
+only; the safe-failure routing above is a separate, unconditional policy
+decision that fires regardless of how many attempts were made.
+
+Re-measured on 5 fresh, real pipeline invocations of boat-lifestyle.com
+with the retry-enabled code (`adjudicate/logs/run_log.csv`, 2026-08-23):
+
+| | successes | out of | rate |
+|---|---|---|---|
+| **Without retry** (original single-attempt code; the 2/6 figure above) | 2 | 6 attempts | 33% |
+| **With retry** (current code, this batch) | 3 | 5 pipeline runs | 60% |
+
+Both are real, small-sample measurements -- not fixed rates, and not
+directly comparable sample sizes. What's worth noting: the underlying
+*per-call* reliability did not change. Of the 9 raw API calls inside the
+5 with-retry runs (1 run succeeded on its first call, 2 runs failed their
+first call but succeeded on the retry, 2 runs failed both calls), 3
+succeeded -- also 33%, consistent
+with the no-retry baseline. The retry doesn't make any single call more
+reliable; it gives the pipeline a second independent draw, which is why
+the pipeline-level success rate moved from roughly 1-in-3 to roughly
+3-in-5 while the per-call rate held steady. All 3 successes in this batch
+independently agreed with each other and with hand-labeled ground truth
+(`axis=category, confidence=high`).

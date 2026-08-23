@@ -22,7 +22,7 @@ class AdjudicateState(TypedDict, total=False):
     t1_dom_text_path: str
 
     # --- escalation_check ---
-    path: str  # "no_action" | "auto_flag" | "insufficient_data" | "escalated"
+    path: str  # "no_action" | "auto_flag" | "insufficient_data" | "escalated" | "parse_failed"
 
     # --- fetch_context ---
     t0_image_bytes: bytes
@@ -37,6 +37,8 @@ class AdjudicateState(TypedDict, total=False):
     vlm_cost_usd: float
     vlm_model: str
     vlm_error: str | None
+    vlm_attempts: int  # 1 or 2 -- MAX_ATTEMPTS in vlm_evidence.py, at most one retry
+    vlm_retry_used: bool
 
     # --- structure_output ---
     evidence: dict[str, Any] | None

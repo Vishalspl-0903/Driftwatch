@@ -45,3 +45,16 @@ rules:
     action: flag_for_review
 
 default_action: escalate_further
+
+# Fires when structure_output.py (node 4) could not obtain evidence to
+# adjudicate at all -- the VLM call failed outright (both attempts, see
+# vlm_evidence.py's retry), or its response never validated against the
+# evidence schema. This is NOT `default_action`: default_action means "we
+# have evidence, but no rule above matched it"; this means "we have no
+# evidence to rule-match in the first place." Distinct action so an audit
+# trail can tell "the model answered ambiguously" apart from "the model
+# didn't produce a usable answer at all." Mandatory human review, never
+# approve, never silently dropped -- see FAILURES.md for the real gap this
+# closed (a parse failure used to raise an uncaught exception with no
+# logged action).
+parse_failure_action: needs_manual_review

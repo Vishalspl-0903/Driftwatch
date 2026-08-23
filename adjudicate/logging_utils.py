@@ -32,6 +32,7 @@ VLM_OUTPUT_USD_PER_1M_TOKENS = 3.00
 LOG_FIELDS = [
     "timestamp", "domain", "drift_score", "path",
     "vlm_latency_s", "vlm_input_tokens", "vlm_output_tokens", "vlm_cost_usd",
+    "vlm_attempts", "vlm_retry_used",
     "evidence_axis", "evidence_confidence", "evidence_pointer",
     "final_action", "policy_reason", "error",
 ]
@@ -64,6 +65,8 @@ def append_run_log(state: dict[str, Any], log_path: Path = DEFAULT_LOG_PATH) -> 
                 "vlm_input_tokens": state.get("vlm_input_tokens"),
                 "vlm_output_tokens": state.get("vlm_output_tokens"),
                 "vlm_cost_usd": state.get("vlm_cost_usd"),
+                "vlm_attempts": state.get("vlm_attempts"),
+                "vlm_retry_used": state.get("vlm_retry_used"),
                 "evidence_axis": evidence.get("axis"),
                 "evidence_confidence": evidence.get("confidence"),
                 "evidence_pointer": evidence.get("evidence_pointer"),
@@ -98,12 +101,12 @@ class BatchSummary:
         lines = [
             f"total pairs run: {total}",
         ]
-        for path_name in ("no_action", "auto_flag", "escalated", "insufficient_data", "graph_error"):
+        for path_name in ("no_action", "auto_flag", "escalated", "insufficient_data", "parse_failed", "graph_error"):
             n = by_path.get(path_name, 0)
             lines.append(f"  {path_name:<18} {n:>3}  ({n/total:.0%})")
         other = total - sum(
             by_path.get(p, 0)
-            for p in ("no_action", "auto_flag", "escalated", "insufficient_data", "graph_error")
+            for p in ("no_action", "auto_flag", "escalated", "insufficient_data", "parse_failed", "graph_error")
         )
         if other:
             lines.append(f"  (other/unrecognized path: {other})")

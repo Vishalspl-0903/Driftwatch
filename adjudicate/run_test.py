@@ -60,11 +60,15 @@ def main() -> int:
             result = app.invoke(initial)
             graph_error = None
         except Exception as exc:  # noqa: BLE001 -- batch runner must survive one domain failing
+            # This is now a secondary safety net, not the mechanism that makes
+            # failures safe -- structure_output.py + graph.py's conditional edge
+            # handle the expected "VLM never produced valid evidence" case
+            # without raising at all (see FAILURES.md). What lands here is a
+            # genuinely unexpected exception (a bug, a filesystem error in
+            # fetch_context, etc.), which still deserves a logged row rather
+            # than a silently lost pair.
             graph_error = f"{type(exc).__name__}: {exc}"
             result = {**initial, "path": "graph_error", "vlm_error": graph_error}
-            # escalation_check only logs terminal paths, and policy_adjudicate never
-            # ran -- without this, a pair that fails mid-escalation leaves no row in
-            # run_log.csv at all. Every attempted pair gets a row, success or not.
             append_run_log(result, log_path=DEFAULT_LOG_PATH)
 
         summary.add(result)
@@ -73,14 +77,19 @@ def main() -> int:
         report_lines.append(f"- image_drift_score: `{initial['image_drift_score']}`")
         report_lines.append(f"- path: `{result.get('path')}`")
         if graph_error:
-            report_lines.append(f"- **graph error (escalation did not complete):** {graph_error}")
+            report_lines.append(f"- **unexpected graph error:** {graph_error}")
         report_lines.append(f"- final action: `{result.get('action')}`")
+        if result.get("path") == "parse_failed":
+            report_lines.append(f"- schema_error: {result.get('schema_error')}")
+            report_lines.append(f"- vlm_attempts: {result.get('vlm_attempts')}  retry_used: {result.get('vlm_retry_used')}")
+            report_lines.append(f"- policy reason: {result.get('policy_reason')}")
         if result.get("path") == "escalated":
             report_lines.append(f"- VLM latency: {result.get('vlm_latency_s')}s")
             report_lines.append(
                 f"- tokens: {result.get('vlm_input_tokens')} in / {result.get('vlm_output_tokens')} out"
             )
             report_lines.append(f"- estimated cost: ${result.get('vlm_cost_usd')}")
+            report_lines.append(f"- vlm_attempts: {result.get('vlm_attempts')}  retry_used: {result.get('vlm_retry_used')}")
             evidence = result.get("evidence") or {}
             report_lines.append(f"- VLM axis: `{evidence.get('axis')}`  confidence: `{evidence.get('confidence')}`")
             report_lines.append(f"- VLM description: {evidence.get('description')}")

@@ -1,7 +1,17 @@
 """adjudicate/graph.py -- the LangGraph definition wiring the five nodes.
 
 escalation_check --(no_action|auto_flag|insufficient_data)--> END
-                  --(escalated)--> fetch_context -> vlm_evidence -> structure_output -> policy_adjudicate -> END
+                  --(escalated)--> fetch_context -> vlm_evidence -> structure_output
+                                        --(parse_failed)--> END  (logged, action=needs_manual_review)
+                                        --(ok)--> policy_adjudicate -> END
+
+The structure_output -> END branch on parse_failed exists specifically so
+that failure never depends on a caller wrapping app.invoke() in its own
+try/except (see structure_output.py's docstring and FAILURES.md for the
+gap this closed: a plain unconditional edge here meant a raised exception
+in structure_output aborted the graph before policy_adjudicate ever ran,
+and only run_test.py's own try/except gave failed pairs any logged
+outcome at all).
 """
 
 from __future__ import annotations
@@ -17,7 +27,7 @@ from adjudicate.nodes.escalation_check import (
 )
 from adjudicate.nodes.fetch_context import fetch_context
 from adjudicate.nodes.policy_adjudicate import policy_adjudicate
-from adjudicate.nodes.structure_output import structure_output
+from adjudicate.nodes.structure_output import PATH_PARSE_FAILED, structure_output
 from adjudicate.nodes.vlm_evidence import vlm_evidence
 from adjudicate.state import AdjudicateState
 
@@ -44,7 +54,11 @@ def build_graph():
     )
     graph.add_edge("fetch_context", "vlm_evidence")
     graph.add_edge("vlm_evidence", "structure_output")
-    graph.add_edge("structure_output", "policy_adjudicate")
+    graph.add_conditional_edges(
+        "structure_output",
+        lambda state: state.get("path") == PATH_PARSE_FAILED,
+        {True: END, False: "policy_adjudicate"},
+    )
     graph.add_edge("policy_adjudicate", END)
 
     return graph.compile()

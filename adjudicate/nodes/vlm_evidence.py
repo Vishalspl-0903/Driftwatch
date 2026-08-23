@@ -32,19 +32,29 @@ model before settling on this config:
     test still once produced a response missing the "confidence" field
     entirely, despite it being in "required". So the JSON shape is not
     fully guaranteed even in the working configuration. That is exactly why
-    node 4 (structure_output) validates and fails loudly rather than assume
+    node 4 (structure_output) validates independently rather than assume
     the schema was honored -- for this model that safety net is doing real
     work, not just defensive boilerplate.
+
+This node retries exactly once (MAX_ATTEMPTS=2) when an attempt doesn't
+produce a validating response, whether the API call itself threw or it
+returned 200 with unparseable/incomplete content. A failure that survives
+both attempts is reported via vlm_error, same as before -- this node still
+never decides what happens next; structure_output.py and the graph route a
+persistent failure to a safe, logged outcome (needs_manual_review), not a
+raised exception. See FAILURES.md for the measured reliability with vs.
+without the retry.
 """
 
 from __future__ import annotations
 
 import base64
+import json
 import os
 import time
 
 from groq import Groq
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from typing import Literal
 
 from adjudicate.logging_utils import estimate_cost_usd
@@ -54,6 +64,15 @@ MODEL_NAME = "qwen/qwen3.6-27b"
 
 CANDIDATE_AXES = ("category", "structural")
 CONFIDENCE_LEVELS = ("high", "medium", "low")
+
+# Exactly one retry, per instruction -- not a loop. All 4 real failures on
+# record (see FAILURES.md) were the API call itself throwing (Groq's own
+# 400 json_validate_failed on an empty or truncated generation); this also
+# covers the rarer case seen in pre-ship testing where the call succeeds
+# but the content doesn't validate (a live test once returned valid JSON
+# missing the required "confidence" field). Either way counts as "the
+# attempt didn't produce usable evidence" and costs one retry, not more.
+MAX_ATTEMPTS = 2
 
 # Revised 2026-08 after the boat-lifestyle.com finding (see FAILURES.md):
 # the original prompt let the model reason about brand identity ("does this
@@ -108,6 +127,35 @@ def _data_uri(image_bytes: bytes) -> str:
     return "data:image/png;base64," + base64.b64encode(image_bytes).decode("ascii")
 
 
+def _attempt_call(client: Groq, messages: list, response_format: dict) -> tuple[bool, str, object, str]:
+    """One raw API call plus an immediate, lightweight validity check --
+    just enough to decide whether this attempt is worth keeping or worth
+    retrying. Not the authoritative validation gate: structure_output.py
+    (node 4) re-parses and re-validates independently regardless of what
+    this check concludes, per its own "never trust blindly" design. This
+    check exists only so vlm_evidence can decide, right now, whether to
+    spend its one retry.
+
+    Returns (ok, raw_text, usage_or_None, error_message_or_empty).
+    """
+    try:
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=messages,
+            response_format=response_format,
+        )
+    except Exception as exc:  # noqa: BLE001 -- caller decides retry vs. give up
+        return False, "", None, f"{type(exc).__name__}: {exc}"
+
+    raw_text = response.choices[0].message.content or ""
+    try:
+        VLMEvidence.model_validate(json.loads(raw_text))
+    except (json.JSONDecodeError, ValidationError) as exc:
+        return False, raw_text, response.usage, f"response did not fit the evidence schema: {exc}"
+
+    return True, raw_text, response.usage, ""
+
+
 def vlm_evidence(state: AdjudicateState) -> dict:
     prompt = PROMPT_TEMPLATE.format(
         domain=state["domain"],
@@ -135,35 +183,41 @@ def vlm_evidence(state: AdjudicateState) -> dict:
 
     client = _client()
     started = time.monotonic()
-    try:
-        response = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=messages,
-            response_format=response_format,
-        )
-    except Exception as exc:  # noqa: BLE001 -- fail loudly downstream, not silently here
-        return {
-            "vlm_error": f"{type(exc).__name__}: {exc}",
-            "vlm_latency_s": round(time.monotonic() - started, 3),
-            "vlm_model": MODEL_NAME,
-            "vlm_raw_text": "",
-            "vlm_input_tokens": 0,
-            "vlm_output_tokens": 0,
-            "vlm_cost_usd": 0.0,
-        }
-    latency = round(time.monotonic() - started, 3)
+    last_error = ""
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        ok, raw_text, usage, err = _attempt_call(client, messages, response_format)
+        if ok:
+            latency = round(time.monotonic() - started, 3)
+            input_tokens = usage.prompt_tokens if usage else 0
+            output_tokens = usage.completion_tokens if usage else 0
+            cost = estimate_cost_usd(input_tokens, output_tokens)
+            return {
+                "vlm_raw_text": raw_text,
+                "vlm_latency_s": latency,
+                "vlm_input_tokens": input_tokens,
+                "vlm_output_tokens": output_tokens,
+                "vlm_cost_usd": round(cost, 6),
+                "vlm_model": MODEL_NAME,
+                "vlm_error": None,
+                "vlm_attempts": attempt,
+                "vlm_retry_used": attempt > 1,
+            }
+        last_error = err
+        # falls through to the next loop iteration (the one retry) or exits
+        # the loop and reports the failure below
 
-    usage = response.usage
-    input_tokens = usage.prompt_tokens if usage else 0
-    output_tokens = usage.completion_tokens if usage else 0
-    cost = estimate_cost_usd(input_tokens, output_tokens)
-
+    # Every attempt (initial + the one retry) failed. Token/cost accounting
+    # for failed attempts is intentionally not attempted here -- Groq's
+    # error responses for this failure mode don't reliably expose usage,
+    # and reporting a guessed number would be worse than reporting none.
     return {
-        "vlm_raw_text": response.choices[0].message.content or "",
-        "vlm_latency_s": latency,
-        "vlm_input_tokens": input_tokens,
-        "vlm_output_tokens": output_tokens,
-        "vlm_cost_usd": round(cost, 6),
+        "vlm_error": last_error,
+        "vlm_latency_s": round(time.monotonic() - started, 3),
         "vlm_model": MODEL_NAME,
-        "vlm_error": None,
+        "vlm_raw_text": "",
+        "vlm_input_tokens": 0,
+        "vlm_output_tokens": 0,
+        "vlm_cost_usd": 0.0,
+        "vlm_attempts": MAX_ATTEMPTS,
+        "vlm_retry_used": True,
     }
