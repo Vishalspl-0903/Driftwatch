@@ -213,7 +213,8 @@ def main() -> int:
     DATA_OUT.write_text(json.dumps(pairs, indent=2), encoding="utf-8")
     print(f"wrote {DATA_OUT} with {len(pairs)} pairs")
     for p in pairs:
-        print(f"  {p['domain']:<24} path={p['path']:<18} action={p['final_action']}")
+        path = p["path"] or "(no run_log.csv row -- run adjudicate/run_test.py first)"
+        print(f"  {p['domain']:<24} path={path:<18} action={p['final_action']}")
     return 0
 
 
