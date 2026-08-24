@@ -167,6 +167,26 @@ below to be precise, and they're reported at that resolution deliberately.
 | VLM reliability, with 1 retry | 3/5 pipeline runs successful (60%) | current code; underlying per-call rate held steady at 33% (3/9 raw calls) — the retry doesn't make one call more reliable, it gives the pipeline a second independent draw |
 | Parse-failure safety | verified, not assumed | a parse failure now has a defined, logged, terminal outcome (`needs_manual_review`) — it never disappears from the queue and never defaults to approve, regardless of how the graph is called. See `FAILURES.md` for the real gap this closed. |
 
+## Reproducing the demo
+
+The console below reads real data, not fixtures: real mined Wayback pairs
+under `data/pairs/` and a real logged agent run in `adjudicate/logs/run_log.csv`.
+Both are gitignored and regenerated on purpose — but that means **regenerating
+them from a truly fresh clone takes real time (mining hits the live Wayback
+CDX API) and real money (the agent's escalated pairs are live Groq API
+calls)**. Running `python scripts/build_console_data.py` before those exist
+will not crash, but it will not produce a fully populated console either —
+it's telling you the truth about what hasn't been run yet, not silently
+faking data.
+
+If you want to confirm the pipeline actually works end-to-end without
+re-running it yourself: [`docs/sanity_check_2026-08-24.md`](docs/sanity_check_2026-08-24.md)
+is a dated, section-by-section verification report (environment through
+repo hygiene, including a real fresh-clone test and a live VLM call), and
+[`docs/verification_screenshots/`](docs/verification_screenshots/) has the
+actual screenshots from that run. Both are checked into the repo as
+verifiable proof, not a claim to take on faith.
+
 ## Console (`console/`)
 
 A minimal React + Vite + Tailwind demo console over `adjudicate/`'s output:
