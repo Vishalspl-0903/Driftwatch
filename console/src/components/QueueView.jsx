@@ -69,24 +69,14 @@ export default function QueueView({ pairs, onSelect }) {
           </thead>
           <tbody>
             {rows.map((p) => {
-              const attempts = p.escalation?.attempts;
-              const current = attempts?.find(
-                (a) => a.attempt === p.escalation.current_attempt
-              );
+              const evidence = p.escalation;
               return (
                 <tr
                   key={p.domain}
                   onClick={() => onSelect(p.domain)}
                   className="border-b border-gray-100 last:border-0 hover:bg-gray-50 cursor-pointer"
                 >
-                  <td className="px-4 py-3 font-medium text-gray-900">
-                    {p.domain}
-                    {attempts && attempts.length > 1 && (
-                      <span className="ml-2 text-xs font-normal text-sky-600 bg-sky-50 border border-sky-200 rounded-full px-2 py-0.5">
-                        {attempts.length} attempts
-                      </span>
-                    )}
-                  </td>
+                  <td className="px-4 py-3 font-medium text-gray-900">{p.domain}</td>
                   <td className="px-4 py-3 text-gray-700 tabular-nums">
                     {p.drift_score != null ? p.drift_score.toFixed(4) : (
                       <span className="text-gray-400">n/a</span>
@@ -94,7 +84,7 @@ export default function QueueView({ pairs, onSelect }) {
                   </td>
                   <td className="px-4 py-3 text-gray-500">{p.path}</td>
                   <td className="px-4 py-3 text-gray-700">
-                    {current ? `${current.axis} / ${current.confidence}` : (
+                    {evidence ? `${evidence.axis} / ${evidence.confidence}` : (
                       <span className="text-gray-400">—</span>
                     )}
                   </td>

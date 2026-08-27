@@ -12,74 +12,38 @@ function reasonLine(pair) {
       return pair.policy_reason
         ? `Boundary-zone score → sent to the VLM → policy_adjudicate ${pair.policy_reason}.`
         : "Boundary-zone score → sent to the VLM for evidence.";
+    case "parse_failed":
+      return "Boundary-zone score → sent to the VLM, which never returned evidence that validated against the schema (both attempts). Routed to mandatory human review — never approved, never silently dropped.";
     default:
       return "";
   }
 }
 
-function EvidenceCard({ attempt, isCurrent }) {
+function EvidenceCard({ evidence }) {
   return (
-    <div
-      className={`rounded-lg border p-4 ${
-        isCurrent ? "border-sky-300 bg-sky-50/40" : "border-gray-200 bg-white"
-      }`}
-    >
-      <div className="flex items-center justify-between mb-2">
-        <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-          Attempt {attempt.attempt} — {attempt.prompt_version}
-          {isCurrent && (
-            <span className="ml-2 normal-case font-semibold text-sky-700">
-              (current)
-            </span>
-          )}
-        </div>
-        {attempt.agreed_with_ground_truth != null && (
-          <span
-            className={`text-xs font-medium px-2 py-0.5 rounded-full border ${
-              attempt.agreed_with_ground_truth
-                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                : "bg-red-50 text-red-700 border-red-200"
-            }`}
-          >
-            {attempt.agreed_with_ground_truth ? "matched ground truth" : "disagreed with ground truth"}
-          </span>
-        )}
-      </div>
-
+    <div className="rounded-lg border border-gray-200 bg-white p-4">
       <div className="flex items-center gap-4 mb-3 text-sm">
         <div>
           <span className="text-gray-400">axis</span>{" "}
-          <span className="font-semibold text-gray-900">{attempt.axis}</span>
+          <span className="font-semibold text-gray-900">{evidence.axis}</span>
         </div>
         <div>
           <span className="text-gray-400">confidence</span>{" "}
-          <span className="font-semibold text-gray-900">{attempt.confidence}</span>
+          <span className="font-semibold text-gray-900">{evidence.confidence}</span>
         </div>
-        {attempt.vlm_cost_usd != null && (
+        {evidence.vlm_cost_usd != null && (
           <div className="text-gray-400 ml-auto">
-            ${attempt.vlm_cost_usd.toFixed(5)} · {attempt.vlm_latency_s}s ·{" "}
-            {attempt.vlm_input_tokens}in/{attempt.vlm_output_tokens}out
+            ${evidence.vlm_cost_usd.toFixed(5)} · {evidence.vlm_latency_s}s ·{" "}
+            {evidence.vlm_input_tokens}in/{evidence.vlm_output_tokens}out
           </div>
         )}
       </div>
 
-      {attempt.description && (
-        <div className="mb-3">
-          <div className="text-xs font-medium text-gray-500 mb-1">Description</div>
-          <p className="text-sm text-gray-800 leading-relaxed">{attempt.description}</p>
-        </div>
-      )}
-
-      <div className="mb-3">
+      <div>
         <div className="text-xs font-medium text-gray-500 mb-1">Evidence pointer</div>
-        <p className="text-sm text-gray-800 leading-relaxed bg-white/60 border border-gray-100 rounded p-2">
-          {attempt.evidence_pointer}
+        <p className="text-sm text-gray-800 leading-relaxed bg-gray-50 border border-gray-100 rounded p-2">
+          {evidence.evidence_pointer}
         </p>
-      </div>
-
-      <div className="text-xs text-gray-500">
-        Policy at the time: <ActionBadge value={attempt.policy_action_at_time} />{" "}
-        <span className="ml-1">{attempt.policy_reason_at_time}</span>
       </div>
     </div>
   );
@@ -87,7 +51,6 @@ function EvidenceCard({ attempt, isCurrent }) {
 
 export default function DetailView({ pair, onBack }) {
   const escalation = pair.escalation;
-  const hasMultipleAttempts = escalation && escalation.attempts.length > 1;
 
   return (
     <div>
@@ -126,37 +89,10 @@ export default function DetailView({ pair, onBack }) {
         </div>
       </div>
 
-      {hasMultipleAttempts && (
-        <div className="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4">
-          <div className="text-sm font-semibold text-amber-900 mb-1">
-            This pair went through VLM escalation twice, with two different verdicts.
-          </div>
-          <p className="text-sm text-amber-800">
-            The first attempt called this axis <strong>structural</strong> at high
-            confidence and would have been auto-approved under the policy at the
-            time. That verdict disagreed with the hand-labeled ground truth (a real
-            category expansion). The policy was changed in response — structural
-            verdicts no longer auto-approve — and a revised prompt produced the
-            second attempt below, which matched ground truth. Both attempts are
-            shown as the actual evidence trail, not just the latest answer.
-          </p>
-        </div>
-      )}
-
       {escalation && (
         <div className="mb-6">
-          <h3 className="text-sm font-medium text-gray-900 mb-3">
-            VLM evidence {hasMultipleAttempts ? "(both attempts)" : "packet"}
-          </h3>
-          <div className={hasMultipleAttempts ? "grid grid-cols-1 lg:grid-cols-2 gap-4" : ""}>
-            {escalation.attempts.map((a) => (
-              <EvidenceCard
-                key={a.attempt}
-                attempt={a}
-                isCurrent={a.attempt === escalation.current_attempt}
-              />
-            ))}
-          </div>
+          <h3 className="text-sm font-medium text-gray-900 mb-3">VLM evidence packet</h3>
+          <EvidenceCard evidence={escalation} />
         </div>
       )}
 
